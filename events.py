@@ -52,7 +52,28 @@ class Event(ABC):
     
     def get_required_variables(self) -> List[str]:
         """Get list of required variables for this event."""
+        if hasattr(self, 'variable'):
+            return [self.variable]
         return []
+
+    def _apply_operator(self, data: xr.DataArray, threshold: Union[float, xr.DataArray]) -> xr.DataArray:
+        """Apply comparison operator."""
+        # Assumes the child class has an 'operator' attribute for comparison.
+        operator = getattr(self, 'operator', None)
+        if operator == ">":
+            return data > threshold
+        elif operator == ">=":
+            return data >= threshold
+        elif operator == "<":
+            return data < threshold
+        elif operator == "<=":
+            return data <= threshold
+        elif operator == "==":
+            return np.isclose(data, threshold)
+        elif operator == "!=":
+            return ~np.isclose(data, threshold)
+        else:
+            raise ValueError(f"Unsupported operator for threshold comparison: {operator}")
 
 
 # ============================================================================
@@ -176,25 +197,6 @@ class SimpleEvent(Event):
             if time_dim is None:
                 raise ValueError("Cannot calculate anomaly without time dimension")
             return data.mean(dim=time_dim) + self.threshold_value
-    
-    def _apply_operator(self, data: xr.DataArray, threshold: Union[float, xr.DataArray]) -> xr.DataArray:
-        """Apply comparison operator."""
-        if self.operator == ">":
-            return data > threshold
-        elif self.operator == ">=":
-            return data >= threshold
-        elif self.operator == "<":
-            return data < threshold
-        elif self.operator == "<=":
-            return data <= threshold
-        elif self.operator == "==":
-            return np.isclose(data, threshold)
-        elif self.operator == "!=":
-            return ~np.isclose(data, threshold)
-    
-    def get_required_variables(self) -> List[str]:
-        """Get list of required variables."""
-        return [self.variable]
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -394,21 +396,6 @@ class SpreadEvent(Event):
             return binary.mean(dim="member")
         
         return binary
-    
-    def _apply_operator(self, data: xr.DataArray, threshold: float) -> xr.DataArray:
-        """Apply comparison operator."""
-        if self.operator == ">":
-            return data > threshold
-        elif self.operator == ">=":
-            return data >= threshold
-        elif self.operator == "<":
-            return data < threshold
-        elif self.operator == "<=":
-            return data <= threshold
-        elif self.operator == "==":
-            return np.isclose(data, threshold)
-        elif self.operator == "!=":
-            return ~np.isclose(data, threshold)
     
     def get_required_variables(self) -> List[str]:
         """Get required variables."""
