@@ -10,7 +10,6 @@ from .utils import (
     get_time_dimension, apply_aggregation
 )
 from .domains import SpatialDomain, TemporalDomain, TemporalPattern, PostThresholdTemporalDomain
-from .factory import create_event_from_dict
 
 # ============================================================================
 # Event Base Classes
@@ -19,18 +18,9 @@ from .factory import create_event_from_dict
 class Event(ABC):
     """Abstract base class for weather events."""
     
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Get event name."""
-        pass
-    
-    @property
-    @abstractmethod
-    def description(self) -> Optional[str]:
-        """Get event description."""
-        pass
-    
+    name: str
+    description: Optional[str]
+
     @abstractmethod
     def evaluate(self, ds: xr.Dataset, preserve_members: bool = False) -> xr.DataArray:
         """
@@ -81,24 +71,16 @@ class SimpleEvent(Event):
     """
     
     # Event identification
-    _name: str
-    _description: Optional[str] = None
-    
-    # Variable specification
+    name: str
     variable: str  = "t2m" # Variable name in dataset
-    variable_transform: Optional[str] = None  # e.g., "daily_max", "daily_mean"
-    
-    # Threshold specification
     operator: OperatorType = ">"
     threshold_value: float = 0.0
+    description: Optional[str] = None
+    variable_transform: Optional[str] = None  # e.g., "daily_max", "daily_mean"
     threshold_type: ThresholdType = "absolute"
     threshold_units: Optional[str] = None
-    
-    # Spatial specification
     spatial_domain: Optional[SpatialDomain] = None
     spatial_aggregation: Optional[AggregationType] = None
-    
-    # Temporal specification
     temporal_domain: Optional[TemporalDomain] = None
     temporal_pattern: Optional[TemporalPattern] = None
     post_threshold_temporal_domain: Optional[PostThresholdTemporalDomain] = None
@@ -106,16 +88,6 @@ class SimpleEvent(Event):
     def __post_init__(self):
         """Validate and process initialization."""
         pass
-    
-    @property
-    def name(self) -> str:
-        """Get event name."""
-        return self._name
-    
-    @property
-    def description(self) -> Optional[str]:
-        """Get event description."""
-        return self._description
     
     def evaluate(self, ds: xr.Dataset, preserve_members: bool = False) -> xr.DataArray:
         """Evaluate event occurrence."""
@@ -228,8 +200,8 @@ class SimpleEvent(Event):
         """Convert to dictionary for JSON serialization."""
         d = {
             "type": "simple",
-            "_name": self._name,
-            "_description": self._description,
+            "name": self.name,
+            "description": self.description,
             "variable": self.variable,
             "variable_transform": self.variable_transform,
             "operator": self.operator,
@@ -296,25 +268,15 @@ class ComplexEvent(Event):
         - (High wind in SPP) OR (Low solar in CAISO)
     """
     
-    _name: str
+    name: str
     events: List[Event]
     operator: LogicalOperatorType = "and"
-    _description: Optional[str] = None
+    description: Optional[str] = None
     
     def __post_init__(self):
         """Validate inputs."""
         if not self.events:
             raise ValueError("Complex event must have at least one sub-event")
-    
-    @property
-    def name(self) -> str:
-        """Get event name."""
-        return self._name
-    
-    @property
-    def description(self) -> Optional[str]:
-        """Get event description."""
-        return self._description
     
     def evaluate(self, ds: xr.Dataset, preserve_members: bool = False) -> xr.DataArray:
         """Evaluate complex event."""
@@ -363,8 +325,8 @@ class ComplexEvent(Event):
         """Convert to dictionary."""
         return {
             "type": "complex",
-            "_name": self._name,
-            "_description": self._description,
+            "name": self.name,
+            "description": self.description,
             "events": [e.to_dict() for e in self.events],
             "operator": self.operator
         }
@@ -372,12 +334,13 @@ class ComplexEvent(Event):
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ComplexEvent':
         """Create from dictionary (new format only)."""
+        from .factory import create_event_from_dict
         events = [create_event_from_dict(event_data) for event_data in data["events"]]
         return cls(
-            _name=data["_name"],
+            name=data["name"],
             events=events,
             operator=data["operator"],
-            _description=data.get("_description")
+            description=data.get("description")
         )
 
 
@@ -395,30 +358,20 @@ class SpreadEvent(Event):
         - Wind speed difference between two wind farms > 10 m/s
     """
     
-    _name: str
+    name: str
     variable: str
     location1: SpatialDomain
     location2: SpatialDomain
     operator: OperatorType = ">"
     threshold_value: float = 0.0
     temporal_domain: Optional[TemporalDomain] = None
-    _description: Optional[str] = None
+    description: Optional[str] = None
     
     def __post_init__(self):
         """Validate inputs."""
         # Ensure both locations are points
         if self.location1.type != "point" or self.location2.type != "point":
             raise ValueError("Spread events require point locations")
-    
-    @property
-    def name(self) -> str:
-        """Get event name."""
-        return self._name
-    
-    @property
-    def description(self) -> Optional[str]:
-        """Get event description."""
-        return self._description
     
     def evaluate(self, ds: xr.Dataset, preserve_members: bool = False) -> xr.DataArray:
         """Evaluate spread event."""
@@ -465,8 +418,8 @@ class SpreadEvent(Event):
         """Convert to dictionary."""
         d = {
             "type": "spread",
-            "_name": self._name,
-            "_description": self._description,
+            "name": self.name,
+            "description": self.description,
             "variable": self.variable,
             "location1": asdict(self.location1),
             "location2": asdict(self.location2),
@@ -487,12 +440,12 @@ class SpreadEvent(Event):
             td_data = data["temporal_domain"]
             temporal_domain = TemporalDomain(**td_data)
         return cls(
-            _name=data["_name"],
+            name=data["name"],
             variable=data["variable"],
             location1=SpatialDomain(**data["location1"]),
             location2=SpatialDomain(**data["location2"]),
             operator=data["operator"],
             threshold_value=data["threshold_value"],
             temporal_domain=temporal_domain,
-            _description=data.get("_description")
+            description=data.get("description")
         )

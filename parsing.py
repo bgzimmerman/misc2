@@ -46,7 +46,7 @@ class EventParser:
             }
             
             return SimpleEvent(
-                _name=f"parsed_{location}_{variable}",
+                name=f"parsed_{location}_{variable}",
                 variable=var_map.get(variable, variable),
                 operator=operator,
                 threshold_value=float(value),
@@ -66,7 +66,7 @@ class EventParser:
             }
             
             return SpreadEvent(
-                _name=f"parsed_{loc1}_{loc2}_spread",
+                name=f"parsed_{loc1}_{loc2}_spread",
                 variable=var_map.get(variable, variable),
                 location1=SpatialDomain(type="point", location=loc1),
                 location2=SpatialDomain(type="point", location=loc2),

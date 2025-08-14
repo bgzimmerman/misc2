@@ -117,8 +117,8 @@ class EventTemplates:
                   threshold_units: str = "F") -> SimpleEvent:
         """Create a heat wave event (consecutive hot days)."""
         return SimpleEvent(
-            _name=f"{location}_heat_wave_{days}d",
-            _description=f"{days}-day heat wave in {location} (>{threshold}{threshold_units})",
+            name=f"{location}_heat_wave_{days}d",
+            description=f"{days}-day heat wave in {location} (>{threshold}{threshold_units})",
             variable="t2m",
             variable_transform="daily_max",
             operator=">",
@@ -137,8 +137,8 @@ class EventTemplates:
                   threshold_units: str = "F") -> SimpleEvent:
         """Create a cold snap event."""
         return SimpleEvent(
-            _name=f"{location}_cold_snap_{days}d",
-            _description=f"{days}-day cold snap in {location} (<{threshold}{threshold_units})",
+            name=f"{location}_cold_snap_{days}d",
+            description=f"{days}-day cold snap in {location} (<{threshold}{threshold_units})",
             variable="t2m",
             variable_transform="daily_min",
             operator="<",
@@ -157,8 +157,8 @@ class EventTemplates:
                   variable_transform: str = "daily_max") -> SimpleEvent:
         """Create a low solar event (daily max solar radiation below threshold)."""
         return SimpleEvent(
-            _name=f"{location}_low_solar",
-            _description=f"Low solar event in {location}: daily max sw_rad_down < {threshold}{threshold_units}",
+            name=f"{location}_low_solar",
+            description=f"Low solar event in {location}: daily max sw_rad_down < {threshold}{threshold_units}",
             variable="sw_rad_down",
             variable_transform=variable_transform,
             operator="<",
@@ -171,8 +171,8 @@ class EventTemplates:
     def high_wind(location: str, threshold: float = 25, hours_in_day: int = 6) -> SimpleEvent:
         """Create high wind event (X hours of high wind in a day)."""
         return SimpleEvent(
-            _name=f"{location}_high_wind",
-            _description=f"High wind in {location} ({hours_in_day}h >{threshold}m/s in 24h)",
+            name=f"{location}_high_wind",
+            description=f"High wind in {location} ({hours_in_day}h >{threshold}m/s in 24h)",
             variable="wind_speed_100m",
             operator=">",
             threshold_value=threshold,
@@ -189,8 +189,8 @@ class EventTemplates:
                       solar_threshold: float = 100) -> ComplexEvent:
         """Create low renewable generation event."""
         low_wind = SimpleEvent(
-            _name=f"{region}_low_wind",
-            _description=f"Low wind in {region}",
+            name=f"{region}_low_wind",
+            description=f"Low wind in {region}",
             variable="wind_speed_100m",
             operator="<",
             threshold_value=wind_threshold,
@@ -199,8 +199,8 @@ class EventTemplates:
         )
         
         low_solar = SimpleEvent(
-            _name=f"{region}_low_solar",
-            _description=f"Low solar in {region}",
+            name=f"{region}_low_solar",
+            description=f"Low solar in {region}",
             variable="surface_solar_radiation",
             operator="<",
             threshold_value=solar_threshold,
@@ -209,8 +209,8 @@ class EventTemplates:
         )
         
         return ComplexEvent(
-            _name=f"{region}_low_renewable",
-            _description=f"Low wind AND solar in {region}",
+            name=f"{region}_low_renewable",
+            description=f"Low wind AND solar in {region}",
             events=[low_wind, low_solar],
             operator="and"
         )
@@ -220,8 +220,8 @@ class EventTemplates:
                           threshold: float = 20) -> SpreadEvent:
         """Create temperature spread event between two locations."""
         return SpreadEvent(
-            _name=f"{location1}_{location2}_temp_spread",
-            _description=f"Temperature spread {location1}-{location2} > {threshold}F",
+            name=f"{location1}_{location2}_temp_spread",
+            description=f"Temperature spread {location1}-{location2} > {threshold}F",
             variable="t2m",
             location1=SpatialDomain(type="point", location=location1),
             location2=SpatialDomain(type="point", location=location2),

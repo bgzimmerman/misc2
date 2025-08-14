@@ -16,12 +16,12 @@ def main():
     
     # 2. Complex event
     ercot_stress = ComplexEvent(
-        _name="ercot_grid_stress",
-        _description="High demand with low renewable generation",
+        name="ercot_grid_stress",
+        description="High demand with low renewable generation",
         events=[
             SimpleEvent(
-                _name="high_temp",
-                _description="High temperature in ERCOT",
+                name="high_temp",
+                description="High temperature in ERCOT",
                 variable="t2m",
                 operator=">=",
                 threshold_value=100,
@@ -29,8 +29,8 @@ def main():
                 spatial_aggregation="mean"
             ),
             SimpleEvent(
-                _name="low_wind",
-                _description="Low wind in ERCOT",
+                name="low_wind",
+                description="Low wind in ERCOT",
                 variable="wind_speed_100m",
                 operator="<",
                 threshold_value=5,
