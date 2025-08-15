@@ -1,6 +1,5 @@
 from .events import SimpleEvent, ComplexEvent
 from .library import EventLibrary, EventTemplates
-from .parsing import EventParser
 from .domains import SpatialDomain, TemporalDomain
 
 def main():
@@ -61,13 +60,6 @@ def main():
     # Example JSON output
     print("\nExample Event JSON:")
     print(phoenix_heat.to_json())
-    
-    # Parse natural language
-    parser = EventParser()
-    parsed = parser.parse("phoenix temperature >= 115F")
-    if parsed:
-        print("\nParsed Event:")
-        print(parsed.to_json())
     
     print("Event system initialization complete")
 

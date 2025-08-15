@@ -10,7 +10,7 @@ from .utils import (
     OperatorType, LogicalOperatorType, AggregationType, ThresholdType, 
     get_time_dimension, apply_aggregation
 )
-from .domains import SpatialDomain, TemporalDomain, TemporalPattern, TemporalAnalysis
+from .domains import SpatialDomain, TemporalPreprocessor, TemporalPattern, TemporalAnalysis
 
 # ============================================================================
 # Event Base Classes
@@ -110,7 +110,7 @@ class SimpleEvent(Event):
 
     # --- Temporal Processing Pipeline ---
     # Stage 1: Pre-processing (Numbers -> Numbers)
-    temporal_pre_processing: Optional[TemporalDomain] = None
+    temporal_pre_processing: Optional[TemporalPreprocessor] = None
     # Stage 2: Thresholding & Pattern Logic (Numbers -> Boolean)
     temporal_pattern: Optional[TemporalPattern] = None
     # Stage 3: Post-processing Analysis (Boolean -> Numbers/Boolean)
@@ -224,7 +224,7 @@ class SimpleEvent(Event):
         return final_data
     
     def _apply_variable_transform(self, data: xr.DataArray) -> xr.DataArray:
-        """DEPRECATED: This functionality is now handled by the TemporalDomain class."""
+        """DEPRECATED: This functionality is now handled by the TemporalPreprocessor class."""
         raise DeprecationWarning("variable_transform is deprecated. Use temporal_pre_processing instead.")
 
     def _get_threshold_value(self, data: xr.DataArray, ds_clim: xr.Dataset = None) -> Union[float, xr.DataArray]:
@@ -308,7 +308,7 @@ class SimpleEvent(Event):
 
         temporal_pre_processing = None
         if "temporal_pre_processing" in data:
-            temporal_pre_processing = TemporalDomain.from_dict(data["temporal_pre_processing"])
+            temporal_pre_processing = TemporalPreprocessor.from_dict(data["temporal_pre_processing"])
         
         temporal_pattern = None
         if "temporal_pattern" in data:
@@ -452,8 +452,12 @@ class SpreadEvent(Event):
     location2: SpatialDomain
     operator: OperatorType = ">"
     threshold_value: float = 0.0
-    temporal_domain: Optional[TemporalDomain] = None
     description: Optional[str] = None
+    
+    # --- Temporal Processing Pipeline ---
+    temporal_pre_processing: Optional[TemporalPreprocessor] = None
+    temporal_pattern: Optional[TemporalPattern] = None
+    temporal_analysis: Optional[TemporalAnalysis] = None
     
     def __post_init__(self):
         """Validate inputs."""
@@ -461,27 +465,64 @@ class SpreadEvent(Event):
         if self.location1.type != "point" or self.location2.type != "point":
             raise ValueError("Spread events require point locations")
     
-    def evaluate(self, ds: xr.Dataset, preserve_members: bool = False) -> xr.DataArray:
-        """Evaluate spread event."""
-        # Get data at both locations
+    def evaluate(self, ds: xr.Dataset, preserve_members: bool = False, introspection: bool = False) -> Union[xr.DataArray, Dict[str, xr.DataArray]]:
+        """Evaluate spread event using the standard temporal pipeline."""
+        print(f"\n--- Evaluating Spread Event: {self.name} ---")
+        outputs = {}
+
+        # 1. Get data at both locations and calculate the spread
+        print("Step 1: Calculating spread between two locations...")
         data1 = self.location1.apply_to_dataset(ds)[self.variable]
         data2 = self.location2.apply_to_dataset(ds)[self.variable]
+        data = data1 - data2
+        if introspection: outputs["1_calculated_spread"] = data.copy()
+
+        # --- TEMPORAL PIPELINE ---
+        # STAGE 1: Apply pre-processing to the spread data
+        if self.temporal_pre_processing:
+            print("Step 2: [Stage 1] Applying temporal pre-processing to the spread...")
+            data = self.temporal_pre_processing.apply(data)
+            if introspection: outputs["2_temporal_pre_processing"] = data.copy()
+        else:
+            print("Step 2: [Stage 1] No temporal pre-processing specified.")
+
+        # STAGE 2: Apply thresholding and pattern logic
+        if self.temporal_pattern:
+            print("Step 3: [Stage 2] Applying temporal pattern logic to create boolean data...")
+            binary_data = self.temporal_pattern.apply(data)
+        else:
+            print("Step 3: [Stage 2] Applying simple threshold comparison to create boolean data...")
+            # Spread events always use an absolute threshold value
+            binary_data = self._apply_operator(data, self.threshold_value)
+        if introspection: outputs["3_thresholding_boolean"] = binary_data.copy()
         
-        # Calculate spread
-        spread = data1 - data2
+        # STAGE 3: Apply post-processing analysis
+        if self.temporal_analysis:
+            print("Step 4: [Stage 3] Applying temporal analysis...")
+            final_data = self.temporal_analysis.apply(binary_data)
+        else:
+            print("Step 4: [Stage 3] No temporal analysis specified.")
+            final_data = binary_data
+        if introspection: outputs["4_temporal_analysis"] = final_data.copy()
         
-        # Apply temporal domain if specified
-        if self.temporal_domain:
-            spread = self.temporal_domain.apply(spread)
-        
-        # Apply threshold
-        binary = self._apply_operator(spread, self.threshold_value)
-        
+        # --- FINALIZATION ---
+        print("Step 5: Finalizing results...")
         # Handle ensemble dimension
-        if "member" in binary.dims and not preserve_members:
-            return binary.mean(dim="member")
+        if "member" in final_data.dims and not preserve_members:
+            print("  -> Calculating ensemble mean probability.")
+            result = final_data.mean(dim="member")
+            if introspection:
+                outputs["5_ensemble_mean"] = result.copy()
+                print("--- Evaluation Complete (Introspection Mode) ---")
+                return outputs
+            return result
+
+        if introspection:
+            print("--- Evaluation Complete (Introspection Mode) ---")
+            return outputs
         
-        return binary
+        print("--- Evaluation Complete ---")
+        return final_data
     
     def get_required_variables(self) -> List[str]:
         """Get required variables."""
@@ -500,25 +541,49 @@ class SpreadEvent(Event):
             "threshold_value": self.threshold_value,
         }
         
-        if self.temporal_domain:
-            d["temporal_domain"] = asdict(self.temporal_domain)
+        if self.temporal_pre_processing:
+            d["temporal_pre_processing"] = asdict(self.temporal_pre_processing)
+        if self.temporal_pattern:
+            d["temporal_pattern"] = asdict(self.temporal_pattern)
+        if self.temporal_analysis:
+            d["temporal_analysis"] = asdict(self.temporal_analysis)
         
         return {k: v for k, v in d.items() if v is not None}
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'SpreadEvent':
-        """Create from dictionary (new format only)."""
-        temporal_domain = None
+        """Create from dictionary."""
+        # Handle backward compatibility
         if "temporal_domain" in data:
-            td_data = data["temporal_domain"]
-            temporal_domain = TemporalDomain(**td_data)
+            warnings.warn(
+                "'temporal_domain' is deprecated, use 'temporal_pre_processing'",
+                DeprecationWarning
+            )
+            data["temporal_pre_processing"] = data.pop("temporal_domain")
+
+        temporal_pre_processing = None
+        if "temporal_pre_processing" in data:
+            temporal_pre_processing = TemporalPreprocessor.from_dict(data["temporal_pre_processing"])
+
+        temporal_pattern = None
+        if "temporal_pattern" in data:
+            temporal_pattern = TemporalPattern(**data["temporal_pattern"])
+
+        temporal_analysis = None
+        if "temporal_analysis" in data:
+            temporal_analysis = TemporalAnalysis(**data["temporal_analysis"])
+            
+        kwargs = data.copy()
+        kwargs.pop("type", None)
+        kwargs.pop("temporal_pre_processing", None)
+        kwargs.pop("temporal_pattern", None)
+        kwargs.pop("temporal_analysis", None)
+        
         return cls(
-            name=data["name"],
-            variable=data["variable"],
-            location1=SpatialDomain(**data["location1"]),
-            location2=SpatialDomain(**data["location2"]),
-            operator=data["operator"],
-            threshold_value=data["threshold_value"],
-            temporal_domain=temporal_domain,
-            description=data.get("description")
+            location1=SpatialDomain(**kwargs.pop("location1")),
+            location2=SpatialDomain(**kwargs.pop("location2")),
+            temporal_pre_processing=temporal_pre_processing,
+            temporal_pattern=temporal_pattern,
+            temporal_analysis=temporal_analysis,
+            **kwargs
         )

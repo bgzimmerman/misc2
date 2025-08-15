@@ -139,7 +139,7 @@ class SpatialDomain:
 # ============================================================================
 
 @dataclass
-class TemporalDomain:
+class TemporalPreprocessor:
     """
     Defines temporal domain operations for continuous data.
     
@@ -161,7 +161,7 @@ class TemporalDomain:
         pass
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'TemporalDomain':
+    def from_dict(cls, data: Dict[str, Any]) -> 'TemporalPreprocessor':
         """Create from dictionary"""
         return cls(**data)
     
@@ -185,6 +185,7 @@ class TemporalDomain:
         """Apply simple rolling or resampling window (left-aligned)."""
         window_td = pd.Timedelta(self.window)
         if self.window_type == "rolling":
+            #TODO: This is hacky and will not work for changing time resolutions i.e. going 3-hourly to 6-hourly like GEFS.
             time_diff = pd.Series(data[time_dim].values).diff().median()
             steps = int(window_td / time_diff)
             # Always left-align: shift by -(steps-1)
@@ -252,28 +253,30 @@ class TemporalPattern:
     
     def __post_init__(self):
         """Validate configuration."""
-        if self.pattern and self.threshold:
-            raise ValueError("Cannot use both pattern and simple threshold")
-        if self.pattern and not self.pattern_threshold:
-            raise ValueError("Pattern requires pattern_threshold")
+        if self.pattern:
+            raise NotImplementedError(
+                "Complex patterns (e.g., '6h_in_24h') are not currently supported. "
+                "Please use a simple threshold and duration."
+            )
+        if self.season_months:
+            raise NotImplementedError(
+                "Seasonal filtering is not currently supported. "
+                "Please remove the 'season_months' parameter."
+            )
     
     def apply(self, data: xr.DataArray) -> xr.DataArray:
         """Apply pattern logic and return binary result. If duration is in days, output is daily; else, keep original resolution."""
         time_dim = get_time_dimension(data)
         if time_dim is None:
             raise ValueError("Cannot apply temporal pattern without time dimension")
+        
         # Apply threshold to create binary data
-        if self.pattern:
-            binary = self._apply_complex_pattern(data, time_dim)
-        else:
-            binary = self._apply_simple_threshold(data)
+        binary = self._apply_simple_threshold(data)
+        
         # Apply duration requirement
         if self.duration:
             binary = self._apply_duration_requirement(binary, time_dim)
-        # Apply season filter
-        if self.season_months:
-            binary = self._apply_season_filter(binary, time_dim)
-        # TODO: If/when supporting more complex patterning, consider reintroducing daily resampling logic here.
+        
         return binary
     
     def _apply_simple_threshold(self, data: xr.DataArray) -> xr.DataArray:
@@ -293,55 +296,6 @@ class TemporalPattern:
             return np.isclose(data, self.threshold)
         else:
             raise ValueError(f"Unsupported operator: {self.operator}")
-    
-    def _apply_complex_pattern(self, data: xr.DataArray, time_dim: str) -> xr.DataArray:
-        """Apply complex temporal patterns like '6h_in_24h' (left-aligned, run-based)."""
-        duration, window = self._parse_pattern()
-        time_diff = pd.Series(data[time_dim].values).diff().median()
-        window_steps = int(window / time_diff)
-        duration_steps = int(duration / time_diff)
-        if self.pattern_operator == ">":
-            binary_data = data > self.pattern_threshold
-        elif self.pattern_operator == ">=":
-            binary_data = data >= self.pattern_threshold
-        elif self.pattern_operator == "<":
-            binary_data = data < self.pattern_threshold
-        elif self.pattern_operator == "<=":
-            binary_data = data <= self.pattern_threshold
-        elif self.pattern_operator == "==":
-            binary_data = np.isclose(data, self.pattern_threshold)
-        else:
-            raise ValueError(f"Unsupported pattern operator: {self.pattern_operator}")
-        # Run-based detection: True if any run of duration_steps in window_steps
-        def has_run(arr, run_length):
-            count = 0
-            for x in arr:
-                if x:
-                    count += 1
-                    if count >= run_length:
-                        return True
-                else:
-                    count = 0
-            return False
-        result = binary_data.rolling({time_dim: window_steps}).reduce(
-            lambda x, axis: np.apply_along_axis(has_run, axis, x, duration_steps)
-        )
-        result = result.shift({time_dim: -(window_steps-1)})
-        # If window is day-based, aggregate to daily
-        if window.components.hours == 0 and window.components.minutes == 0 and window.components.seconds == 0:
-            result = result.resample({time_dim: '1D'}).max()
-        return result
-    
-    def _parse_pattern(self) -> Tuple[pd.Timedelta, pd.Timedelta]:
-        """Parse complex pattern strings like '6h_in_24h'. Always use lowercase 'h'."""
-        if not self.pattern:
-            raise ValueError("No pattern specified")
-        parts = self.pattern.split("_in_")
-        if len(parts) != 2:
-            raise ValueError(f"Invalid pattern format: {self.pattern}")
-        duration = pd.Timedelta(parts[0])
-        window = pd.Timedelta(parts[1])
-        return duration, window
     
     def _apply_duration_requirement(self, binary: xr.DataArray, time_dim: str) -> xr.DataArray:
         """Apply consecutive duration requirements (left-aligned)."""
@@ -370,14 +324,6 @@ class TemporalPattern:
         # to be left-aligned, so the timestamp reflects the start of the window.
         return consecutive.shift({time_dim: -(steps_required - 1)})
     
-    def _apply_season_filter(self, binary: xr.DataArray, time_dim: str) -> xr.DataArray:
-        """Filter to specific months."""
-        if self.season_months is None:
-            return binary
-        
-        month_mask = binary[time_dim].dt.month.isin(self.season_months)
-        return binary.where(month_mask, False)
-
 
 # ============================================================================
 # Stage 3: Temporal Analysis (Post-Threshold)
@@ -386,67 +332,35 @@ class TemporalPattern:
 @dataclass
 class TemporalAnalysis:
     """
-    Performs analysis on boolean data (post-threshold).
-    
-    This is Stage 3 of the temporal processing pipeline. It takes the True/False
-    output from the thresholding stage and calculates frequencies, counts, and
-    other persistence metrics over a specified window.
+    Defines post-threshold analysis to be performed on boolean (True/False) event data.
+
+    This class is a placeholder for future analysis capabilities. It allows you to
+    specify what kind of analysis you want to run on the binary output of an event's
+    thresholding stage.
+
+    Potential Future Analysis Types:
+    - count_in_window: Count the number of `True` occurrences within a moving
+      or resampling window (e.g., "count the number of hot days per week").
+    - frequency_in_window: Calculate the frequency (mean) of `True` occurrences
+      (e.g., "what percentage of hours in each day were windy?").
+    - longest_streak: Find the longest consecutive run of `True` values.
+    - time_since_last: Calculate the time since the last `True` event occurred.
     """
     
-    window: Optional[str] = None  # e.g., "1D", "6h", "7D"
-    window_type: str = "rolling"  # "rolling", "resample"
-    aggregation: Optional[AggregationType] = None  # mean (frequency), sum (count)
+    # Example attributes for a future implementation
+    analysis_type: Optional[str] = None  # e.g., "count_in_window", "frequency_in_window"
+    window: Optional[str] = None         # e.g., "7D", "1M"
     
     def apply(self, binary_data: xr.DataArray) -> xr.DataArray:
-        """Apply temporal operations to binary data."""
-        if not self.window:
-            return binary_data
-        
-        time_dim = get_time_dimension(binary_data)
-        if time_dim is None:
-            raise ValueError("Cannot apply temporal domain without time dimension")
-        
-        if self.window_type == "rolling":
-            return self._apply_rolling_window(binary_data, time_dim)
-        elif self.window_type == "resample":
-            return self._apply_resample(binary_data, time_dim)
-        else:
-            raise ValueError(f"Unsupported window type: {self.window_type}")
-    
-    def _apply_rolling_window(self, binary_data: xr.DataArray, time_dim: str) -> xr.DataArray:
-        """Apply rolling window to binary data (left-aligned). Shift before any thresholding or further logic."""
-        window_td = pd.Timedelta(self.window)
-        time_diff = pd.Series(binary_data[time_dim].values).diff().median()
-        steps = int(window_td / time_diff)
-        # Always left-align: shift by -(steps-1) BEFORE any thresholding
-        if self.aggregation == "mean":
-            result = binary_data.rolling({time_dim: steps}).mean()
-        elif self.aggregation == "sum":
-            result = binary_data.rolling({time_dim: steps}).sum()
-        elif self.aggregation == "all":
-            result = binary_data.rolling({time_dim: steps}).reduce(
-                lambda x, axis: x.all(axis=axis)
+        """
+        Applies the specified temporal analysis to the binary data.
+        NOTE: This is a placeholder for future implementation.
+        """
+        if self.analysis_type:
+            raise NotImplementedError(
+                f"The analysis type '{self.analysis_type}' is not yet implemented. "
+                "This class is a placeholder for future capabilities."
             )
-        elif self.aggregation == "any":
-            result = binary_data.rolling({time_dim: steps}).reduce(
-                lambda x, axis: x.any(axis=axis)
-            )
-        else:
-            result = binary_data.rolling({time_dim: steps}).mean()
-        result = result.shift({time_dim: -(steps-1)})
-        return result
-    
-    def _apply_resample(self, binary_data: xr.DataArray, time_dim: str) -> xr.DataArray:
-        """Apply resampling to binary data."""
-        resampled = binary_data.resample({time_dim: self.window})
         
-        if self.aggregation == "mean":
-            return resampled.mean()  # Frequency
-        elif self.aggregation == "sum":
-            return resampled.sum()   # Count
-        elif self.aggregation == "all":
-            return resampled.all()   # All True
-        elif self.aggregation == "any":
-            return resampled.any()   # Any True
-        else:
-            return resampled.mean()  # Default to frequency
+        # If no analysis is specified, return the data as-is.
+        return binary_data

@@ -64,27 +64,6 @@ def apply_aggregation(data: xr.DataArray, aggregation: AggregationType, dim: Uni
     else:
         raise ValueError(f"Unknown aggregation type: {aggregation}")
 
-def convert_units(value: float, from_units: str, to_units: str) -> float:
-    """Convert between common meteorological units."""
-    conversions = {
-        ("F", "C"): lambda x: (x - 32) * 5/9,
-        ("C", "F"): lambda x: x * 9/5 + 32,
-        ("F", "K"): lambda x: (x - 32) * 5/9 + 273.15,
-        ("C", "K"): lambda x: x + 273.15,
-        ("K", "C"): lambda x: x - 273.15,
-        ("K", "F"): lambda x: (x - 273.15) * 9/5 + 32,
-        ("mph", "m/s"): lambda x: x * 0.44704,
-        ("m/s", "mph"): lambda x: x / 0.44704,
-        ("mm", "in"): lambda x: x / 25.4,
-        ("in", "mm"): lambda x: x * 25.4,
-    }
-    
-    key = (from_units, to_units)
-    if key in conversions:
-        return conversions[key](value)
-    else:
-        return value
-
 # ============================================================================
 # Named Locations Database
 # ============================================================================

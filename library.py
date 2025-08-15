@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 
 from .factory import create_event_from_dict
 from .events import Event, SimpleEvent, ComplexEvent, SpreadEvent
-from .domains import SpatialDomain, TemporalPattern, TemporalDomain
+from .domains import SpatialDomain, TemporalPattern, TemporalPreprocessor
 from .utils import AggregationType
 
 # ============================================================================
@@ -124,7 +124,7 @@ class EventTemplates:
             threshold_value=threshold,
             threshold_units=threshold_units,
             spatial_domain=SpatialDomain(type="point", location=location),
-            temporal_pre_processing=TemporalDomain(
+            temporal_pre_processing=TemporalPreprocessor(
                 window_type="resample", window="1D", aggregation="max"
             ),
             temporal_pattern=TemporalPattern(
@@ -146,7 +146,7 @@ class EventTemplates:
             threshold_value=threshold,
             threshold_units=threshold_units,
             spatial_domain=SpatialDomain(type="point", location=location),
-            temporal_pre_processing=TemporalDomain(
+            temporal_pre_processing=TemporalPreprocessor(
                 window_type="resample", window="1D", aggregation="min"
             ),
             temporal_pattern=TemporalPattern(
@@ -167,7 +167,7 @@ class EventTemplates:
             threshold_value=threshold,
             threshold_units=threshold_units,
             spatial_domain=SpatialDomain(type="point", location=location),
-            temporal_pre_processing=TemporalDomain(
+            temporal_pre_processing=TemporalPreprocessor(
                 window_type="resample", window="1D", aggregation="max"
             )
         )

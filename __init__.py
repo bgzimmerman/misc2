@@ -2,21 +2,20 @@
 Weather Event Definition and Analysis System
 ===========================================
 
-A comprehensive system for defining weather events and calculating their occurrence
-in gridded weather data (ERA5 historical and NWP ensemble forecasts).
+A system for defining weather events and calculating their occurrence
+in gridded weather data.
 """
 
-__version__ = "2.0.1"
+__version__ = "0.0.1"
 
 from .utils import (
     LOCATION_DATABASE,
     get_time_dimension,
-    convert_units,
     apply_aggregation
 )
 from .domains import (
     SpatialDomain,
-    TemporalDomain,
+    TemporalPreprocessor,
     TemporalPattern,
     TemporalAnalysis,
 )
@@ -32,14 +31,12 @@ from .library import (
     EventTemplates,
     get_example_event_database,
 )
-from .parsing import EventParser
-from .calculator import EventCalculator, validate_event
 
 __all__ = [
     # Enums
     # Domains
     "SpatialDomain",
-    "TemporalDomain",
+    "TemporalPreprocessor",
     "TemporalPattern",
     "TemporalAnalysis",
     # Events
@@ -53,14 +50,8 @@ __all__ = [
     "EventLibrary",
     "EventTemplates",
     "get_example_event_database",
-    # Parsing
-    "EventParser",
-    # Calculator
-    "EventCalculator",
-    "validate_event",
     # Utilities
     "LOCATION_DATABASE",
     "get_time_dimension",
-    "convert_units",
     "apply_aggregation"
 ]

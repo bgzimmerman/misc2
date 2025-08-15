@@ -5,7 +5,7 @@ if TYPE_CHECKING:
     from .events import Event, SimpleEvent, ComplexEvent, SpreadEvent
 
 def create_event_from_dict(data: Dict[str, Any]) -> "Event":
-    """Create appropriate event type from dictionary (new format only)."""
+    """Create appropriate event type from dictionary."""
     # Import here to avoid circular dependencies
     from .events import SimpleEvent, ComplexEvent, SpreadEvent
 
