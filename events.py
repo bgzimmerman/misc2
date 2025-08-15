@@ -371,29 +371,17 @@ class ComplexEvent(Event):
         # Evaluate all sub-events, preserving members for proper correlation
         results = [event.evaluate(ds, preserve_members=True) for event in self.events]
         
-        # Normalize results to handle different data types and drop NaN values
-        normalized_results = []
-        for result in results:
-            # Convert to boolean, dropping NaN values
-            if result.dtype == bool:
-                normalized = result
-            else:
-                # For float arrays, drop NaN values and convert to boolean
-                normalized = result.dropna(dim=result.dims[-1])  # Drop NaN along time dimension
-                normalized = normalized.astype(bool)
-            normalized_results.append(normalized)
-        
         # Align all results to same coordinates (this will handle different time ranges)
-        normalized_results = xr.align(*normalized_results, join='inner')
+        aligned_results = xr.align(*results, join='inner')
         
         # Combine with logical operator
         if self.operator == "and":
-            combined = normalized_results[0]
-            for result in normalized_results[1:]:
+            combined = aligned_results[0]
+            for result in aligned_results[1:]:
                 combined = combined & result
         else:  # OR
-            combined = normalized_results[0]
-            for result in normalized_results[1:]:
+            combined = aligned_results[0]
+            for result in aligned_results[1:]:
                 combined = combined | result
         
         # Handle ensemble dimension

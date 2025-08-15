@@ -243,154 +243,100 @@ def get_example_event_database() -> Dict[str, Dict[str, Any]]:
     """Get example event definitions matching trader use cases."""
     
     return {
-        # ERCOT events
-        "ercot_extreme_heat": {
-            "type": "simple",
-            "name": "ercot_extreme_heat",
-            "description": "Extreme heat in ERCOT (daily max > 100F)",
-            "variable": "t2m",
-            "operator": ">=",
-            "threshold_value": 100,
-            "threshold_type": "absolute",
-            "threshold_units": "F",
-            "spatial_domain": {"type": "iso", "iso": "ERCOT"},
-            "spatial_aggregation": "mean",
-            "temporal_pre_processing": {
-                "window_type": "resample", "window": "1D", "aggregation": "max"
-            }
+        "phoenix_daily_max_gt_110F": {
+          "type": "simple",
+          "name": "phoenix_daily_max_gt_110F",
+          "description": "Daily maximum temperature in Phoenix exceeds 110F.",
+          "variable": "t2m",
+          "operator": ">",
+          "threshold_value": 110,
+          "threshold_type": "absolute",
+          "threshold_units": "F",
+          "spatial_domain": { "type": "point", "location": "phoenix" },
+          "temporal_pre_processing": { "window_type": "resample", "window": "1D", "aggregation": "max" }
         },
-        
-        "ercot_heat_low_wind": {
-            "type": "complex",
-            "name": "ercot_heat_low_wind",
-            "description": "High temp with low wind in ERCOT",
-            "operator": "and",
-            "events": [
-                {
-                    "type": "simple",
-                    "name": "ercot_high_temp",
-                    "variable": "t2m",
-                    "operator": ">=",
-                    "threshold_value": 95,
-                    "spatial_domain": {"type": "iso", "iso": "ERCOT"},
-                    "spatial_aggregation": "mean",
-                    "temporal_pre_processing": {
-                        "window_type": "resample", "window": "1D", "aggregation": "max"
-                    }
-                },
-                {
-                    "type": "simple",
-                    "name": "ercot_low_wind",
-                    "variable": "wind_speed_100m",
-                    "operator": "<",
-                    "threshold_value": 5,
-                    "spatial_domain": {"type": "iso", "iso": "ERCOT"},
-                    "spatial_aggregation": "mean"
-                }
-            ]
-        },
-        
-        # California events
-        "california_heat_wave": {
-            "type": "complex",
-            "name": "california_heat_wave",
-            "description": "2-day heat wave in Sacramento AND Burbank",
-            "operator": "and",
-            "events": [
-                {
-                    "type": "simple",
-                    "name": "sacramento_heat",
-                    "variable": "t2m",
-                    "operator": ">",
-                    "threshold_value": 95,
-                    "threshold_units": "F",
-                    "spatial_domain": {"type": "point", "location": "sacramento"},
-                    "temporal_pre_processing": {
-                        "window_type": "resample", "window": "1D", "aggregation": "max"
-                    },
-                    "temporal_pattern": {
-                        "threshold": 95,
-                        "operator": ">",
-                        "duration": "2D"
-                    }
-                },
-                {
-                    "type": "simple",
-                    "name": "burbank_heat",
-                    "variable": "t2m",
-                    "operator": ">",
-                    "threshold_value": 95,
-                    "threshold_units": "F",
-                    "spatial_domain": {"type": "point", "location": "burbank"},
-                    "temporal_pre_processing": {
-                        "window_type": "resample", "window": "1D", "aggregation": "max"
-                    },
-                    "temporal_pattern": {
-                        "threshold": 95,
-                        "operator": ">",
-                        "duration": "2D"
-                    }
-                }
-            ]
-        },
-        
-        # SPP wind event
-        "spp_high_wind": {
-            "type": "simple",
-            "name": "spp_high_wind",
-            "description": "High wind generation in SPP (>30GW equivalent)",
-            "variable": "wind_speed_100m",
+        "phoenix_heatwave_3day_gt_105F": {
+          "type": "simple",
+          "name": "phoenix_heatwave_3day_gt_105F",
+          "description": "A 3-day heatwave where the daily maximum temperature in Phoenix exceeds 105F.",
+          "variable": "t2m",
+          "operator": ">",
+          "threshold_value": 105,
+          "threshold_type": "absolute",
+          "threshold_units": "F",
+          "spatial_domain": { "type": "point", "location": "phoenix" },
+          "temporal_pre_processing": { "window_type": "resample", "window": "1D", "aggregation": "max" },
+          "temporal_pattern": {
+            "threshold": 105,
             "operator": ">",
-            "threshold_value": 12,
-            "spatial_domain": {
-                "type": "bbox",
-                "lat_min": 35.0,
-                "lat_max": 40.0,
-                "lon_min": -102.0,
-                "lon_max": -94.0
-            },
-            "spatial_aggregation": "mean"
+            "duration": "3D"
+          }
         },
-        # Low solar in Phoenix event
-        "phoenix_low_solar": {
-            "type": "simple",
-            "name": "phoenix_low_solar",
-            "description": "Low solar in Phoenix",
-            "variable": "sw_rad_down",
-            "operator": "<",
-            "threshold_value": 100,
-            "spatial_domain": {
-                "type": "point",
-                "location": "phoenix"
-            },
-            "spatial_aggregation": "mean"
-        },
-        
-        # Spread events
-        "miso_temperature_spread": {
-            "type": "spread",
-            "name": "miso_temperature_spread",
-            "description": "North-South temperature gradient in MISO",
-            "variable": "t2m",
-            "location1": {"type": "point", "location": "minneapolis"},
-            "location2": {"type": "point", "location": "houston"},
+        "phoenix_hourly_heat_6hr_gt_90F": {
+          "type": "simple",
+          "name": "phoenix_hourly_heat_6hr_gt_90F",
+          "description": "Sustained hourly heat where temperature remains above 90F for at least 6 consecutive hours.",
+          "variable": "t2m",
+          "operator": ">",
+          "threshold_value": 90,
+          "threshold_type": "absolute",
+          "threshold_units": "F",
+          "spatial_domain": { "type": "point", "location": "phoenix" },
+          "temporal_pattern": {
+            "threshold": 90,
             "operator": ">",
-            "threshold_value": 30
+            "duration": "6h"
+          }
         },
-        
-        # Complex temporal pattern
-        "intermittent_wind": {
-            "type": "simple",
-            "name": "intermittent_wind",
-            "description": "Intermittent wind (6+ hours <5m/s in any 24h period)",
-            "variable": "wind_speed_100m",
-            "operator": "<",
-            "threshold_value": 5,
-            "spatial_domain": {"type": "point", "location": "chicago"},
-            "temporal_pattern": {
-                "pattern": "6h_in_24h",
-                "pattern_threshold": 5,
-                "pattern_operator": "<"
+        "phoenix_rolling_24hr_avg_gt_95F": {
+          "type": "simple",
+          "name": "phoenix_rolling_24hr_avg_gt_95F",
+          "description": "The 24-hour rolling average temperature in Phoenix exceeds 95F.",
+          "variable": "t2m",
+          "operator": ">",
+          "threshold_value": 95,
+          "threshold_type": "absolute",
+          "threshold_units": "F",
+          "spatial_domain": { "type": "point", "location": "phoenix" },
+          "temporal_pre_processing": { "window_type": "rolling", "window": "24h", "aggregation": "mean" }
+        },
+        "phoenix_vegas_regional_heat": {
+          "type": "complex",
+          "name": "phoenix_vegas_regional_heat",
+          "description": "Daily max temperature is over 100F in both Phoenix and Las Vegas.",
+          "operator": "and",
+          "events": [
+            {
+              "type": "simple",
+              "name": "phoenix_daily_max_gt_100F",
+              "variable": "t2m",
+              "operator": ">",
+              "threshold_value": 100,
+              "threshold_units": "F",
+              "spatial_domain": { "type": "point", "location": "phoenix" },
+              "temporal_pre_processing": { "window_type": "resample", "window": "1D", "aggregation": "max" }
+            },
+            {
+              "type": "simple",
+              "name": "vegas_daily_max_gt_100F",
+              "variable": "t2m",
+              "operator": ">",
+              "threshold_value": 100,
+              "threshold_units": "F",
+              "spatial_domain": { "type": "point", "location": "las_vegas" },
+              "temporal_pre_processing": { "window_type": "resample", "window": "1D", "aggregation": "max" }
             }
+          ]
+        },
+        "phoenix_denver_temp_spread": {
+          "type": "spread",
+          "name": "phoenix_denver_temp_spread",
+          "description": "Daily max temperature in Phoenix is more than 20F warmer than Denver.",
+          "variable": "t2m",
+          "location1": { "type": "point", "location": "phoenix" },
+          "location2": { "type": "point", "location": "denver" },
+          "operator": ">",
+          "threshold_value": 20,
+          "temporal_pre_processing": { "window_type": "resample", "window": "1D", "aggregation": "max" }
         }
     }
