@@ -1,7 +1,7 @@
 from .events import SimpleEvent, ComplexEvent
 from .library import EventLibrary, EventTemplates
 from .parsing import EventParser
-from .domains import SpatialDomain
+from .domains import SpatialDomain, TemporalDomain
 
 def main():
     """Main execution function to demonstrate package capabilities."""
@@ -26,7 +26,10 @@ def main():
                 operator=">=",
                 threshold_value=100,
                 spatial_domain=SpatialDomain(type="iso", iso="ERCOT"),
-                spatial_aggregation="mean"
+                spatial_aggregation="mean",
+                temporal_pre_processing=TemporalDomain(
+                    window_type="resample", window="1D", aggregation="max"
+                )
             ),
             SimpleEvent(
                 name="low_wind",

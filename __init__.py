@@ -18,7 +18,7 @@ from .domains import (
     SpatialDomain,
     TemporalDomain,
     TemporalPattern,
-    PostThresholdTemporalDomain,
+    TemporalAnalysis,
 )
 from .events import (
     Event,
@@ -41,7 +41,7 @@ __all__ = [
     "SpatialDomain",
     "TemporalDomain",
     "TemporalPattern",
-    "PostThresholdTemporalDomain",
+    "TemporalAnalysis",
     # Events
     "Event",
     "SimpleEvent",

@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 
 from .factory import create_event_from_dict
 from .events import Event, SimpleEvent, ComplexEvent, SpreadEvent
-from .domains import SpatialDomain, TemporalPattern
+from .domains import SpatialDomain, TemporalPattern, TemporalDomain
 from .utils import AggregationType
 
 # ============================================================================
@@ -24,12 +24,12 @@ class EventLibrary:
     
     def __init__(self, library_path: Optional[Path] = None):
         """Initialize event library."""
-        self.library_path = library_path or Path("event_library.json")
+        self.library_path = Path(library_path) or Path("event_library.json")
         self.events: Dict[str, Event] = {}
         self.metadata: Dict[str, Dict[str, Any]] = {}
         
         if self.library_path.exists():
-            self.load()
+            self.load() 
     
     def add(self, event: Event, tags: Optional[List[str]] = None, 
             author: Optional[str] = None) -> None:
@@ -120,11 +120,13 @@ class EventTemplates:
             name=f"{location}_heat_wave_{days}d",
             description=f"{days}-day heat wave in {location} (>{threshold}{threshold_units})",
             variable="t2m",
-            variable_transform="daily_max",
             operator=">",
             threshold_value=threshold,
             threshold_units=threshold_units,
             spatial_domain=SpatialDomain(type="point", location=location),
+            temporal_pre_processing=TemporalDomain(
+                window_type="resample", window="1D", aggregation="max"
+            ),
             temporal_pattern=TemporalPattern(
                 threshold=threshold,
                 operator=">",
@@ -140,11 +142,13 @@ class EventTemplates:
             name=f"{location}_cold_snap_{days}d",
             description=f"{days}-day cold snap in {location} (<{threshold}{threshold_units})",
             variable="t2m",
-            variable_transform="daily_min",
             operator="<",
             threshold_value=threshold,
             threshold_units=threshold_units,
             spatial_domain=SpatialDomain(type="point", location=location),
+            temporal_pre_processing=TemporalDomain(
+                window_type="resample", window="1D", aggregation="min"
+            ),
             temporal_pattern=TemporalPattern(
                 threshold=threshold,
                 operator="<",
@@ -153,18 +157,19 @@ class EventTemplates:
         )
 
     @staticmethod
-    def low_solar(location: str, threshold: float = 200, threshold_units: str = "W/m2",
-                  variable_transform: str = "daily_max") -> SimpleEvent:
+    def low_solar(location: str, threshold: float = 200, threshold_units: str = "W/m2") -> SimpleEvent:
         """Create a low solar event (daily max solar radiation below threshold)."""
         return SimpleEvent(
             name=f"{location}_low_solar",
             description=f"Low solar event in {location}: daily max sw_rad_down < {threshold}{threshold_units}",
             variable="sw_rad_down",
-            variable_transform=variable_transform,
             operator="<",
             threshold_value=threshold,
             threshold_units=threshold_units,
-            spatial_domain=SpatialDomain(type="point", location=location)
+            spatial_domain=SpatialDomain(type="point", location=location),
+            temporal_pre_processing=TemporalDomain(
+                window_type="resample", window="1D", aggregation="max"
+            )
         )
     
     @staticmethod
@@ -244,16 +249,15 @@ def get_example_event_database() -> Dict[str, Dict[str, Any]]:
             "name": "ercot_extreme_heat",
             "description": "Extreme heat in ERCOT (daily max > 100F)",
             "variable": "t2m",
-            "variable_transform": "daily_max",
             "operator": ">=",
             "threshold_value": 100,
             "threshold_type": "absolute",
             "threshold_units": "F",
-            "spatial_domain": {
-                "type": "iso",
-                "iso": "ERCOT"
-            },
-            "spatial_aggregation": "mean"
+            "spatial_domain": {"type": "iso", "iso": "ERCOT"},
+            "spatial_aggregation": "mean",
+            "temporal_pre_processing": {
+                "window_type": "resample", "window": "1D", "aggregation": "max"
+            }
         },
         
         "ercot_heat_low_wind": {
@@ -266,11 +270,13 @@ def get_example_event_database() -> Dict[str, Dict[str, Any]]:
                     "type": "simple",
                     "name": "ercot_high_temp",
                     "variable": "t2m",
-                    "variable_transform": "daily_max",
                     "operator": ">=",
                     "threshold_value": 95,
                     "spatial_domain": {"type": "iso", "iso": "ERCOT"},
-                    "spatial_aggregation": "mean"
+                    "spatial_aggregation": "mean",
+                    "temporal_pre_processing": {
+                        "window_type": "resample", "window": "1D", "aggregation": "max"
+                    }
                 },
                 {
                     "type": "simple",
@@ -295,11 +301,13 @@ def get_example_event_database() -> Dict[str, Dict[str, Any]]:
                     "type": "simple",
                     "name": "sacramento_heat",
                     "variable": "t2m",
-                    "variable_transform": "daily_max",
                     "operator": ">",
                     "threshold_value": 95,
                     "threshold_units": "F",
                     "spatial_domain": {"type": "point", "location": "sacramento"},
+                    "temporal_pre_processing": {
+                        "window_type": "resample", "window": "1D", "aggregation": "max"
+                    },
                     "temporal_pattern": {
                         "threshold": 95,
                         "operator": ">",
@@ -310,11 +318,13 @@ def get_example_event_database() -> Dict[str, Dict[str, Any]]:
                     "type": "simple",
                     "name": "burbank_heat",
                     "variable": "t2m",
-                    "variable_transform": "daily_max",
                     "operator": ">",
                     "threshold_value": 95,
                     "threshold_units": "F",
                     "spatial_domain": {"type": "point", "location": "burbank"},
+                    "temporal_pre_processing": {
+                        "window_type": "resample", "window": "1D", "aggregation": "max"
+                    },
                     "temporal_pattern": {
                         "threshold": 95,
                         "operator": ">",

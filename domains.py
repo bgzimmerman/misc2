@@ -162,7 +162,7 @@ class TemporalDomain:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TemporalDomain':
-        """Create from dictionary (new format only)."""
+        """Create from dictionary"""
         return cls(**data)
     
     def apply(self, data: xr.DataArray, time_dim: Optional[str] = None) -> xr.DataArray:
@@ -336,9 +336,7 @@ class TemporalPattern:
         """Parse complex pattern strings like '6h_in_24h'. Always use lowercase 'h'."""
         if not self.pattern:
             raise ValueError("No pattern specified")
-        # Convert 'H' to 'h' for compatibility
-        pattern_fixed = self.pattern.replace('H', 'h')
-        parts = pattern_fixed.split("_in_")
+        parts = self.pattern.split("_in_")
         if len(parts) != 2:
             raise ValueError(f"Invalid pattern format: {self.pattern}")
         duration = pd.Timedelta(parts[0])
@@ -349,14 +347,28 @@ class TemporalPattern:
         """Apply consecutive duration requirements (left-aligned)."""
         if not self.duration:
             return binary
+
+        # Convert the duration string (e.g., "2D") into a Timedelta object
         duration_td = pd.Timedelta(self.duration)
+        
+        # Automatically detect the time resolution of the data by finding the
+        # median time difference between consecutive data points.
+        #TODO: This is hacky and will not work for changing time resolution.
         time_diff = pd.Series(binary[time_dim].values).diff().median()
-        steps_required = int(duration_td / time_diff)
-        # Use rolling window to check consecutive occurrences, left-aligned
-        consecutive = binary.rolling({time_dim: steps_required}).reduce(
-            lambda x, axis: x.all(axis=axis)
-        ).shift({time_dim: -(steps_required-1)})
-        return consecutive
+
+        # Calculate the number of consecutive time steps required to meet the duration
+        steps_required = int(round(duration_td / time_diff))
+        if steps_required < 1:
+            steps_required = 1
+        
+        # Use a rolling sum to efficiently check for consecutive 'True' values.
+        # If the sum over the window equals the number of steps, it means all
+        # values in that window were 'True'. This is more performant than reduce.
+        consecutive = (binary.rolling({time_dim: steps_required}).sum() == steps_required)
+        
+        # The rolling operation is right-aligned by default. Shift the result
+        # to be left-aligned, so the timestamp reflects the start of the window.
+        return consecutive.shift({time_dim: -(steps_required - 1)})
     
     def _apply_season_filter(self, binary: xr.DataArray, time_dim: str) -> xr.DataArray:
         """Filter to specific months."""
@@ -368,16 +380,17 @@ class TemporalPattern:
 
 
 # ============================================================================
-# Post-Threshold Temporal Domain Class
+# Stage 3: Temporal Analysis (Post-Threshold)
 # ============================================================================
 
 @dataclass
-class PostThresholdTemporalDomain:
+class TemporalAnalysis:
     """
-    Temporal operations for binary data (post-threshold).
+    Performs analysis on boolean data (post-threshold).
     
-    Supports rolling windows and resampling on binary data to calculate
-    frequencies, counts, and persistence metrics.
+    This is Stage 3 of the temporal processing pipeline. It takes the True/False
+    output from the thresholding stage and calculates frequencies, counts, and
+    other persistence metrics over a specified window.
     """
     
     window: Optional[str] = None  # e.g., "1D", "6h", "7D"

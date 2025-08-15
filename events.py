@@ -4,12 +4,13 @@ import xarray as xr
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Any, Union, Optional, Literal
+import warnings
 
 from .utils import (
     OperatorType, LogicalOperatorType, AggregationType, ThresholdType, 
     get_time_dimension, apply_aggregation
 )
-from .domains import SpatialDomain, TemporalDomain, TemporalPattern, PostThresholdTemporalDomain
+from .domains import SpatialDomain, TemporalDomain, TemporalPattern, TemporalAnalysis
 
 # ============================================================================
 # Event Base Classes
@@ -97,87 +98,135 @@ class SimpleEvent(Event):
     operator: OperatorType = ">"
     threshold_value: float = 0.0
     description: Optional[str] = None
-    variable_transform: Optional[str] = None  # e.g., "daily_max", "daily_mean"
+    
+    # Threshold specification
     threshold_type: ThresholdType = "absolute"
     threshold_units: Optional[str] = None
+    
+    # Spatial specification
     spatial_domain: Optional[SpatialDomain] = None
     spatial_aggregation: Optional[AggregationType] = None
-    temporal_domain: Optional[TemporalDomain] = None
+    aggregation_order: Literal["temporal_first", "spatial_first"] = "temporal_first"
+
+    # --- Temporal Processing Pipeline ---
+    # Stage 1: Pre-processing (Numbers -> Numbers)
+    temporal_pre_processing: Optional[TemporalDomain] = None
+    # Stage 2: Thresholding & Pattern Logic (Numbers -> Boolean)
     temporal_pattern: Optional[TemporalPattern] = None
-    post_threshold_temporal_domain: Optional[PostThresholdTemporalDomain] = None
+    # Stage 3: Post-processing Analysis (Boolean -> Numbers/Boolean)
+    temporal_analysis: Optional[TemporalAnalysis] = None
     
     def __post_init__(self):
         """Validate and process initialization."""
         pass
     
-    def evaluate(self, ds: xr.Dataset, preserve_members: bool = False) -> xr.DataArray:
-        """Evaluate event occurrence."""
-        # Get variable
+    def evaluate(self, ds: xr.Dataset, preserve_members: bool = False, introspection: bool = False) -> Union[xr.DataArray, Dict[str, xr.DataArray]]:
+        """
+        Evaluate event occurrence using a three-stage temporal pipeline.
+
+        Args:
+            ds: The dataset to evaluate.
+            preserve_members: If True, keeps the ensemble member dimension.
+            introspection: If True, returns a dictionary of intermediate results for debugging.
+
+        Returns:
+            The final event result as a DataArray, or a dictionary of intermediate steps if introspection is True.
+        """
+        print(f"\n--- Evaluating Event: {self.name} ---")
+        # --- PREPARATION ---
         if self.variable not in ds:
             raise ValueError(f"Variable '{self.variable}' not found in dataset")
         
-        # 1. Apply spatial domain
+        outputs = {}
+
+        # 1. Apply spatial domain to select the geographical area of interest
         if self.spatial_domain:
-            ds_spatial = self.spatial_domain.apply_to_dataset(ds)
-            data = ds_spatial[self.variable]
+            print(f"Step 1: Applying spatial domain ({self.spatial_domain.type} at {self.spatial_domain.location or 'custom area'})...")
+            data = self.spatial_domain.apply_to_dataset(ds)[self.variable]
         else:
+            print("Step 1: No spatial domain specified, using full dataset.")
             data = ds[self.variable]
+        if introspection: outputs["1_spatial_selection"] = data.copy()
 
-        # 2. Apply variable transform if specified
-        if self.variable_transform:
-            data = self._apply_variable_transform(data)
+        # --- TEMPORAL PIPELINE ---
+        print(f"Step 2: Following aggregation order: '{self.aggregation_order}'")
+        # Handle flexible aggregation order
+        if self.aggregation_order == 'temporal_first':
+            # STAGE 1: Apply pre-processing (e.g., resampling, rolling averages)
+            if self.temporal_pre_processing:
+                print("  -> [Stage 1] Applying temporal pre-processing...")
+                data = self.temporal_pre_processing.apply(data)
+                if introspection: outputs["2a_temporal_pre_processing"] = data.copy()
+            
+            # Apply spatial aggregation after temporal pre-processing
+            if self.spatial_aggregation and (not self.spatial_domain or self.spatial_domain.type != "point"):
+                print(f"  -> [Post-Temporal] Applying spatial aggregation ({self.spatial_aggregation})...")
+                spatial_dims = ["lat", "lon"]
+                data = apply_aggregation(data, self.spatial_aggregation, spatial_dims)
+                if introspection: outputs["2b_spatial_aggregation"] = data.copy()
 
-        # 3. Apply spatial aggregation
-        if self.spatial_aggregation and (not self.spatial_domain or self.spatial_domain.type != "point"):
-            spatial_dims = ["lat", "lon"]
-            data = apply_aggregation(data, self.spatial_aggregation, spatial_dims)
-        
-        # 4. Apply temporal domain (for continuous data)
-        if self.temporal_domain:
-            data = self.temporal_domain.apply(data)
-        
-        # 5. Apply temporal pattern (creates binary data)
+        else: # 'spatial_first'
+            # Apply spatial aggregation before temporal pre-processing
+            if self.spatial_aggregation and (not self.spatial_domain or self.spatial_domain.type != "point"):
+                print(f"  -> [Pre-Temporal] Applying spatial aggregation ({self.spatial_aggregation})...")
+                spatial_dims = ["lat", "lon"]
+                data = apply_aggregation(data, self.spatial_aggregation, spatial_dims)
+                if introspection: outputs["2a_spatial_aggregation"] = data.copy()
+
+            # STAGE 1: Apply pre-processing (e.g., resampling, rolling averages)
+            if self.temporal_pre_processing:
+                print("  -> [Stage 1] Applying temporal pre-processing...")
+                data = self.temporal_pre_processing.apply(data)
+                if introspection: outputs["2b_temporal_pre_processing"] = data.copy()
+
+        # STAGE 2: Apply thresholding and pattern logic to get a boolean result
         if self.temporal_pattern:
-            binary = self.temporal_pattern.apply(data)
+            print("Step 3: [Stage 2] Applying temporal pattern logic to create boolean data...")
+            binary_data = self.temporal_pattern.apply(data)
         else:
-            # Apply simple threshold
+            print("Step 3: [Stage 2] Applying simple threshold comparison to create boolean data...")
             threshold = self._get_threshold_value(data, ds)
-            binary = self._apply_operator(data, threshold)
+            binary_data = self._apply_operator(data, threshold)
+        if introspection: outputs["3_thresholding_boolean"] = binary_data.copy()
         
-        # 6. Apply post-threshold temporal domain (for binary data)
-        if self.post_threshold_temporal_domain:
-            binary = self.post_threshold_temporal_domain.apply(binary)
+        # STAGE 3: Apply post-processing analysis on the boolean data
+        if self.temporal_analysis:
+            print("Step 4: [Stage 3] Applying temporal analysis...")
+            final_data = self.temporal_analysis.apply(binary_data)
+        else:
+            print("Step 4: [Stage 3] No temporal analysis specified.")
+            final_data = binary_data
+        if introspection: outputs["4_temporal_analysis"] = final_data.copy()
         
+        # --- FINALIZATION ---
+        print("Step 5: Finalizing results...")
         # Assign valid_time if forecast (lead_time present)
-        if "lead_time" in binary.dims and "init_time" in binary.dims:
-            valid_time = binary["init_time"] + binary["lead_time"]
-            binary = binary.assign_coords({"valid_time": valid_time})
+        if "lead_time" in final_data.dims and "init_time" in final_data.coords:
+            print("  -> Assigning 'valid_time' coordinate.")
+            valid_time = final_data["init_time"] + final_data["lead_time"]
+            final_data = final_data.assign_coords({"valid_time": valid_time})
         
         # Handle ensemble dimension
-        if "member" in binary.dims and not preserve_members:
-            return binary.mean(dim="member")
+        if "member" in final_data.dims and not preserve_members:
+            print("  -> Calculating ensemble mean probability.")
+            result = final_data.mean(dim="member")
+            if introspection: 
+                outputs["5_ensemble_mean"] = result.copy()
+                print("--- Evaluation Complete (Introspection Mode) ---")
+                return outputs
+            return result
+
+        if introspection:
+            print("--- Evaluation Complete (Introspection Mode) ---")
+            return outputs
         
-        return binary
+        print("--- Evaluation Complete ---")
+        return final_data
     
     def _apply_variable_transform(self, data: xr.DataArray) -> xr.DataArray:
-        """Apply transformations like daily_max, daily_mean, etc. Handles both forecast (lead_time) and historical (valid_time) data."""
-        # Determine which time dimension to use
-        time_dim = get_time_dimension(data)
-        if time_dim is None:
-            # No recognized time dimension, return unchanged
-            return data
+        """DEPRECATED: This functionality is now handled by the TemporalDomain class."""
+        raise DeprecationWarning("variable_transform is deprecated. Use temporal_pre_processing instead.")
 
-        if self.variable_transform == "daily_max":
-            return data.resample({time_dim: "1D"}).max()
-        elif self.variable_transform == "daily_min":
-            return data.resample({time_dim: "1D"}).min()
-        elif self.variable_transform == "daily_mean":
-            return data.resample({time_dim: "1D"}).mean()
-        elif self.variable_transform == "daily_sum":
-            return data.resample({time_dim: "1D"}).sum()
-        else:
-            return data
-    
     def _get_threshold_value(self, data: xr.DataArray, ds_clim: xr.Dataset = None) -> Union[float, xr.DataArray]:
         """Get threshold value based on threshold type."""
         if self.threshold_type == "absolute":
@@ -205,7 +254,6 @@ class SimpleEvent(Event):
             "name": self.name,
             "description": self.description,
             "variable": self.variable,
-            "variable_transform": self.variable_transform,
             "operator": self.operator,
             "threshold_value": self.threshold_value,
             "threshold_type": self.threshold_type,
@@ -216,12 +264,13 @@ class SimpleEvent(Event):
             d["spatial_domain"] = asdict(self.spatial_domain)
         if self.spatial_aggregation:
             d["spatial_aggregation"] = self.spatial_aggregation
-        if self.temporal_domain:
-            d["temporal_domain"] = asdict(self.temporal_domain)
+            d["aggregation_order"] = self.aggregation_order
+        if self.temporal_pre_processing:
+            d["temporal_pre_processing"] = asdict(self.temporal_pre_processing)
         if self.temporal_pattern:
             d["temporal_pattern"] = asdict(self.temporal_pattern)
-        if self.post_threshold_temporal_domain:
-            d["post_threshold_temporal_domain"] = asdict(self.post_threshold_temporal_domain)
+        if self.temporal_analysis:
+            d["temporal_analysis"] = asdict(self.temporal_analysis)
         
         return {k: v for k, v in d.items() if v is not None}
     
@@ -231,27 +280,64 @@ class SimpleEvent(Event):
         spatial_domain = None
         if "spatial_domain" in data:
             spatial_domain = SpatialDomain(**data["spatial_domain"])
-        temporal_domain = None
+        
+        # Handle old format for backward compatibility
         if "temporal_domain" in data:
-            temporal_domain = TemporalDomain.from_dict(data["temporal_domain"])
+            warnings.warn(
+                "'temporal_domain' is deprecated, use 'temporal_pre_processing'",
+                DeprecationWarning
+            )
+            data["temporal_pre_processing"] = data.pop("temporal_domain")
+
+        if "variable_transform" in data:
+             warnings.warn(
+                "'variable_transform' is deprecated, use 'temporal_pre_processing'",
+                DeprecationWarning
+            )
+             transform = data.pop("variable_transform")
+             if not data.get("temporal_pre_processing"):
+                 agg_map = {
+                     "daily_max": "max", "daily_min": "min",
+                     "daily_mean": "mean", "daily_sum": "sum"
+                 }
+                 if transform in agg_map:
+                     data["temporal_pre_processing"] = {
+                         "window_type": "resample", "window": "1D",
+                         "aggregation": agg_map[transform]
+                     }
+
+        temporal_pre_processing = None
+        if "temporal_pre_processing" in data:
+            temporal_pre_processing = TemporalDomain.from_dict(data["temporal_pre_processing"])
+        
         temporal_pattern = None
         if "temporal_pattern" in data:
             temporal_pattern = TemporalPattern(**data["temporal_pattern"])
-        post_threshold_temporal_domain = None
+
         if "post_threshold_temporal_domain" in data:
-            ptd_data = data["post_threshold_temporal_domain"]
-            post_threshold_temporal_domain = PostThresholdTemporalDomain(**ptd_data)
+            warnings.warn(
+                "'post_threshold_temporal_domain' is deprecated, use 'temporal_analysis'",
+                DeprecationWarning
+            )
+            data["temporal_analysis"] = data.pop("post_threshold_temporal_domain")
+
+        temporal_analysis = None
+        if "temporal_analysis" in data:
+            ptd_data = data["temporal_analysis"]
+            temporal_analysis = TemporalAnalysis(**ptd_data)
+            
         kwargs = data.copy()
         kwargs.pop("type", None)
         kwargs.pop("spatial_domain", None)
-        kwargs.pop("temporal_domain", None)
+        kwargs.pop("temporal_pre_processing", None)
         kwargs.pop("temporal_pattern", None)
-        kwargs.pop("post_threshold_temporal_domain", None)
+        kwargs.pop("temporal_analysis", None)
+        
         return cls(
             spatial_domain=spatial_domain,
-            temporal_domain=temporal_domain,
+            temporal_pre_processing=temporal_pre_processing,
             temporal_pattern=temporal_pattern,
-            post_threshold_temporal_domain=post_threshold_temporal_domain,
+            temporal_analysis=temporal_analysis,
             **kwargs
         )
 
