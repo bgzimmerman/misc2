@@ -1,67 +1,43 @@
-from .events import SimpleEvent, ComplexEvent
-from .library import EventLibrary, EventTemplates
-from .domains import SpatialDomain, TemporalDomain
+from .library import EventLibrary, get_example_event_database
+from .factory import create_event_from_dict
 
 def main():
     """Main execution function to demonstrate package capabilities."""
     print("Weather Event System - Example Usage")
     
-    # Create some example events
-    events = []
+    # 1. Get the example event database
+    print("\nStep 1: Loading example event database...")
+    example_database = get_example_event_database()
+    print(f" -> Found {len(example_database)} example events.")
     
-    # 1. Simple heat event
-    phoenix_heat = EventTemplates.heat_wave("phoenix", threshold=115, days=2)
-    events.append(phoenix_heat)
-    
-    # 2. Complex event
-    ercot_stress = ComplexEvent(
-        name="ercot_grid_stress",
-        description="High demand with low renewable generation",
-        events=[
-            SimpleEvent(
-                name="high_temp",
-                description="High temperature in ERCOT",
-                variable="t2m",
-                operator=">=",
-                threshold_value=100,
-                spatial_domain=SpatialDomain(type="iso", iso="ERCOT"),
-                spatial_aggregation="mean",
-                temporal_pre_processing=TemporalDomain(
-                    window_type="resample", window="1D", aggregation="max"
-                )
-            ),
-            SimpleEvent(
-                name="low_wind",
-                description="Low wind in ERCOT",
-                variable="wind_speed_100m",
-                operator="<",
-                threshold_value=5,
-                spatial_domain=SpatialDomain(type="iso", iso="ERCOT"),
-                spatial_aggregation="mean"
-            )
-        ],
-        operator="and"
-    )
-    events.append(ercot_stress)
-    
-    # 3. Spread event
-    temp_spread = EventTemplates.temperature_spread("minneapolis", "houston", 30)
-    events.append(temp_spread)
-    
-    # Create event library
+    # 2. Create an EventLibrary and populate it from the database
+    print("\nStep 2: Populating the Event Library...")
     library = EventLibrary()
-    for event in events:
-        library.add(event, tags=["example", "energy"], author="system")
-    
-    # Save library
+    for name, event_data in example_database.items():
+        event = create_event_from_dict(event_data)
+        # In a real scenario, you might derive tags from the data itself
+        tags = ["example", event.get_required_variables()[0]]
+        if "phoenix" in name:
+            tags.append("phoenix")
+        library.add(event, tags=tags, author="system_example")
+    print(f" -> Library populated with {len(library.events)} events.")
+
+    # 3. Save the library to a file
     library.save()
-    print(f"Saved {len(events)} events to library")
+    print(f"\nStep 3: Library saved to '{library.library_path}'")
     
-    # Example JSON output
-    print("\nExample Event JSON:")
-    print(phoenix_heat.to_json())
+    # 4. Demonstrate searching the library
+    print("\nStep 4: Searching for events tagged with 'spread'...")
+    spread_events = library.search(tags=["spread"])
+    if spread_events:
+        print(f" -> Found {len(spread_events)} spread event(s).")
+        # Print the JSON of the first found spread event as an example
+        print("\nExample Spread Event JSON:")
+        print(spread_events[0].to_json())
+    else:
+        print(" -> No spread events found.")
     
-    print("Event system initialization complete")
+    print("\nEvent system demonstration complete.")
 
 
 if __name__ == "__main__":
